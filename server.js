@@ -1,4 +1,7 @@
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const { execSync } = require('child_process');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const QRCode = require('qrcode');
@@ -6,59 +9,139 @@ const QRCode = require('qrcode');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Store the WhatsApp session OUTSIDE the OneDrive project folder.
+// A Chromium profile inside OneDrive causes file-lock conflicts and
+// timeouts. LOCALAPPDATA is local to the PC, fast and never synced.
+const AUTH_PATH = path.join(process.env.LOCALAPPDATA || __dirname, 'wwebjs_auth');
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(__dirname));
 
 // ------------------------------------------------------------------
-// WhatsApp client setup
+// WhatsApp client setup (with auto-restart so the site never dies)
 // ------------------------------------------------------------------
-const client = new Client({
-  authStrategy: new LocalAuth({
-    dataPath: '.wwebjs_auth' // session is saved here so you scan the QR only once
-  }),
-  puppeteer: {
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-gpu',
-      '--disable-dev-shm-usage'
-    ]
-  }
-});
-
+let client = null;
 let clientReady = false;
 let latestQr = null;
+let restartTimer = null;
+let restartDelay = 5000;
 
-client.on('qr', (qr) => {
-  latestQr = qr;
-  console.log('\n==============================================');
-  console.log('  Scan this QR code to link your WhatsApp:');
-  console.log('  Phone > WhatsApp > Linked Devices > Link a Device');
-  console.log('  (QR is also shown on the web page)');
-  console.log('==============================================');
-  qrcode.generate(qr, { small: true });
-  console.log('');
-});
+function killOrphanedBrowsers() {
+  // A failed launch can leave a hung Chromium (from the puppeteer cache)
+  // holding the session folder, making every retry fail with
+  // "browser is already running". Kill only puppeteer's Chromium,
+  // never the user's own Chrome browser.
+  try {
+    execSync(
+      `powershell -NoProfile -Command "Get-Process chrome -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*\\.cache\\puppeteer*' } | Stop-Process -Force"`,
+      { stdio: 'ignore' }
+    );
+  } catch (e) { /* ignore */ }
+}
 
-client.on('ready', () => {
-  clientReady = true;
+function cleanupStaleLocks() {
+  // If the browser crashed, it can leave lock files that make the next
+  // launch fail with "browser is already running". Remove them safely.
+  killOrphanedBrowsers();
+  const sessionDir = path.join(AUTH_PATH, 'session');
+  if (!fs.existsSync(sessionDir)) return;
+  ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'DevToolsActivePort']
+    .forEach((f) => {
+      try { fs.unlinkSync(path.join(sessionDir, f)); } catch (e) { /* ignore */ }
+    });
+}
+
+function createClient() {
+  clientReady = false;
   latestQr = null;
-  console.log('[WhatsApp] Client is ready! Session saved. You can now send messages.');
-});
 
-client.on('auth_failure', (msg) => {
-  console.error('[WhatsApp] Authentication failed:', msg);
+  const c = new Client({
+    authStrategy: new LocalAuth({
+      dataPath: AUTH_PATH // session is saved here so you scan the QR only once
+    }),
+    // Give a slow machine time to load WhatsApp Web (default is 30s,
+    // which is too short and aborts with "auth timeout").
+    authTimeoutMs: 180000,
+    puppeteer: {
+      headless: true,
+      timeout: 240000,
+      protocolTimeout: 240000,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--disable-features=Translate'
+      ]
+    }
+  });
+
+  let readyFired = false;
+
+  c.on('qr', (qr) => {
+    latestQr = qr;
+    console.log('\n==============================================');
+    console.log('  Scan this QR code to link your WhatsApp:');
+    console.log('  Phone > WhatsApp > Linked Devices > Link a Device');
+    console.log('  (QR is also shown on the web page)');
+    console.log('==============================================');
+    qrcode.generate(qr, { small: true });
+    console.log('');
+  });
+
+  c.on('ready', () => {
+    if (readyFired) return;
+    readyFired = true;
+    clientReady = true;
+    restartDelay = 5000;
+    console.log('[WhatsApp] Client is ready! Session saved. You can now send messages.');
+  });
+
+  c.on('auth_failure', (msg) => {
+    console.error('[WhatsApp] Authentication failed:', msg);
+    clientReady = false;
+    scheduleRestart();
+  });
+
+  c.on('disconnected', (reason) => {
+    console.log('[WhatsApp] Client disconnected:', reason);
+    clientReady = false;
+    scheduleRestart();
+  });
+
+  c.initialize().catch((err) => {
+    const msg = err && err.message ? err.message : String(err);
+    console.error('[WhatsApp] Failed to initialize client:', msg);
+    scheduleRestart();
+  });
+
+  return c;
+}
+
+function scheduleRestart() {
+  if (restartTimer) return;
+  const delay = restartDelay;
+  restartDelay = Math.min(restartDelay * 2, 30000); // backoff: 5s -> 30s max
+  console.log(`[WhatsApp] Restarting client in ${(delay / 1000).toFixed(0)}s...`);
+  restartTimer = setTimeout(() => {
+    restartTimer = null;
+    cleanupStaleLocks();
+    client = createClient();
+  }, delay);
+}
+
+cleanupStaleLocks();
+client = createClient();
+
+// Keep the web server alive even if the WhatsApp client crashes
+process.on('uncaughtException', (err) => {
+  console.error('[Server] Uncaught exception (site keeps running):', err.message);
   clientReady = false;
+  scheduleRestart();
 });
-
-client.on('disconnected', (reason) => {
-  console.log('[WhatsApp] Client disconnected:', reason);
-  clientReady = false;
-});
-
-client.initialize().catch((err) => {
-  console.error('[WhatsApp] Failed to initialize client:', err.message);
+process.on('unhandledRejection', (reason) => {
+  console.error('[Server] Unhandled rejection (site keeps running):',
+    reason && reason.message ? reason.message : reason);
 });
 
 // ------------------------------------------------------------------
@@ -127,22 +210,43 @@ app.post('/send-bulk-message', async (req, res) => {
       results.push(item);
       continue;
     }
-
-    try {
-      // Verify the number is actually registered on WhatsApp
-      const contact = await client.getNumberId(number);
-      if (!contact) {
-        item.error = 'Number is not registered on WhatsApp';
-        results.push(item);
-        continue;
-      }
-
-      await client.sendMessage(number, message);
-      item.status = 'sent';
-    } catch (err) {
-      item.error = err.message || String(err);
+    if (number.length < 10) {
+      item.error = 'Number is missing the country code. Use full format like +919137819535 or +14155552671';
+      results.push(item);
+      continue;
     }
 
+    try {
+      // Try to resolve a real WhatsApp ID for the number first. If the
+      // number is not on WhatsApp (or the country code is wrong), this
+      // returns null. If it resolves, we use that ID for sending.
+      let chatId = number + '@c.us';
+      try {
+        const wid = await client.getNumberId(number);
+        if (wid && wid._serialized) {
+          chatId = wid._serialized;
+        }
+      } catch (e) {
+        // getNumberId can fail sometimes - fall back to the direct ID.
+      }
+
+      const sentMsg = await client.sendMessage(chatId, message);
+
+      if (sentMsg) {
+        item.status = 'sent';
+      } else {
+        item.error = 'WhatsApp returned no result - the number may not be registered on WhatsApp';
+      }
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      if (msg.includes('No LID')) {
+        item.error = 'WhatsApp cannot find this number. It is not registered on WhatsApp, or the country code is missing/wrong. Use +<countrycode><number>, e.g. +919137819535';
+      } else {
+        item.error = msg;
+      }
+    }
+
+    console.log(`[WhatsApp] ${item.number} -> ${item.status}${item.error ? ' (' + item.error + ')' : ''}`);
     results.push(item);
 
     // Randomized delay of 1 to 3 seconds before the next send
