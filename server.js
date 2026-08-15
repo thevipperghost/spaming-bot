@@ -230,13 +230,18 @@ app.post('/send-bulk-message', async (req, res) => {
         // getNumberId can fail sometimes - fall back to the direct ID.
       }
 
-      const sentMsg = await client.sendMessage(chatId, message);
-
-      if (sentMsg) {
-        item.status = 'sent';
-      } else {
-        item.error = 'WhatsApp returned no result - the number may not be registered on WhatsApp';
+      // sendMessage resolves even if it returns undefined - the library
+      // often can't fetch the message model back, but the message IS sent.
+      // So a resolved call (no throw) means the send went through.
+      try {
+        await client.sendMessage(chatId, message);
+      } catch (sendErr) {
+        if (sendErr.message && sendErr.message.includes('No LID')) {
+          throw new Error('WhatsApp cannot find this number. It is not registered on WhatsApp, or the country code is missing/wrong. Use +<countrycode><number>, e.g. +919137819535');
+        }
+        throw sendErr;
       }
+      item.status = 'sent';
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       if (msg.includes('No LID')) {
