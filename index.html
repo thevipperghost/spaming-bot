@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WhatsApp Bulk Message Sender</title>
+<style>
+  :root {
+    --whatsapp: #25D366;
+    --whatsapp-dark: #1DA851;
+    --whatsapp-soft: rgba(37, 211, 102, 0.12);
+    --bg: #0b141a;
+    --bg-2: #111b21;
+    --card: rgba(17, 27, 33, 0.92);
+    --text: #e9edef;
+    --muted: #8696a0;
+    --border: #2a3942;
+    --success: #4ade80;
+    --danger: #f87171;
+    --warning: #fbbf24;
+    --radius: 14px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background:
+      radial-gradient(900px 500px at 85% -10%, rgba(37, 211, 102, 0.12), transparent 60%),
+      radial-gradient(700px 400px at -10% 110%, rgba(37, 211, 102, 0.08), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .app {
+    width: 100%;
+    max-width: 680px;
+  }
+
+  /* ---------- Header ---------- */
+  header { text-align: center; margin-bottom: 22px; }
+  .logo {
+    width: 58px; height: 58px; border-radius: 16px;
+    background: linear-gradient(135deg, var(--whatsapp), var(--whatsapp-dark));
+    display: inline-flex; align-items: center; justify-content: center;
+    box-shadow: 0 8px 24px rgba(37, 211, 102, 0.35);
+  }
+  .logo svg { width: 32px; height: 32px; fill: #0b141a; }
+  h1 { font-size: 1.55rem; margin-top: 12px; letter-spacing: 0.2px; }
+  .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+
+  .conn-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    margin-top: 14px; padding: 7px 16px; border-radius: 999px;
+    font-size: 0.8rem; font-weight: 600;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .conn-pill .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .conn-pill.online { color: var(--success); border-color: rgba(74, 222, 128, 0.4); }
+  .conn-pill.online .dot { background: var(--success); box-shadow: 0 0 10px var(--success); }
+  .conn-pill.offline { color: var(--warning); border-color: rgba(251, 191, 36, 0.4); }
+  .conn-pill.offline .dot { background: var(--warning); }
+  .conn-pill.error { color: var(--danger); border-color: rgba(248, 113, 113, 0.4); }
+  .conn-pill.error .dot { background: var(--danger); }
+  .spinner {
+    width: 9px; height: 9px; border-radius: 50%;
+    border: 2px solid rgba(134, 150, 160, 0.3);
+    border-top-color: var(--muted);
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(6px);
+  }
+
+  /* ---------- QR / connect section ---------- */
+  .connect-box { text-align: center; margin-bottom: 22px; }
+  .connect-box.hidden, .form-card.hidden, #status.hidden { display: none; }
+  .qr-frame {
+    display: inline-block; padding: 14px; border-radius: 18px;
+    background: #fff; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    animation: fadeIn 0.4s ease;
+  }
+  .qr-frame img { display: block; width: 240px; height: 240px; }
+  .qr-hint { margin-top: 14px; color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
+  .qr-hint b { color: var(--text); }
+  .connect-wait {
+    padding: 34px 20px; color: var(--muted); font-size: 0.9rem;
+  }
+  .connect-wait .spinner-big {
+    width: 34px; height: 34px; margin: 0 auto 14px; border-radius: 50%;
+    border: 3px solid rgba(37, 211, 102, 0.2);
+    border-top-color: var(--whatsapp);
+    animation: spin 0.9s linear infinite;
+  }
+  .connect-ok {
+    padding: 26px 20px;
+  }
+  .connect-ok .check {
+    width: 54px; height: 54px; margin: 0 auto 12px; border-radius: 50%;
+    background: var(--whatsapp-soft); border: 1px solid rgba(74, 222, 128, 0.5);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .connect-ok .check svg { width: 28px; height: 28px; stroke: var(--success); }
+  .connect-ok h3 { color: var(--success); font-size: 1.05rem; margin-bottom: 4px; }
+  .connect-ok p { color: var(--muted); font-size: 0.85rem; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  /* ---------- Form ---------- */
+  .form-group { margin-bottom: 18px; }
+  .form-group:last-of-type { margin-bottom: 20px; }
+  .label-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  label { font-size: 0.85rem; font-weight: 600; }
+  .count {
+    font-size: 0.75rem; color: var(--muted); font-family: Consolas, monospace;
+    background: rgba(255, 255, 255, 0.05); padding: 3px 8px; border-radius: 6px;
+  }
+  textarea {
+    width: 100%; background: rgba(11, 20, 26, 0.9); border: 1px solid var(--border);
+    color: var(--text); border-radius: 10px; padding: 12px;
+    font-family: inherit; font-size: 0.95rem; resize: vertical;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  textarea:focus { outline: none; border-color: var(--whatsapp); box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.12); }
+  textarea::placeholder { color: #54656f; }
+  textarea#numbers { min-height: 72px; }
+  textarea#message { min-height: 120px; }
+  .hint { font-size: 0.78rem; color: var(--muted); margin-top: 6px; }
+  .btn {
+    width: 100%; padding: 14px; border: none; border-radius: 10px;
+    background: linear-gradient(135deg, var(--whatsapp), var(--whatsapp-dark));
+    color: #0b141a; font-size: 1rem; font-weight: 700; cursor: pointer;
+    transition: filter 0.2s, transform 0.1s;
+  }
+  .btn:hover:not(:disabled) { filter: brightness(1.08); }
+  .btn:active:not(:disabled) { transform: scale(0.99); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn[data-sending] { pointer-events: none; }
+
+  /* ---------- Results ---------- */
+  #status { margin-top: 22px; }
+  .msg { border-radius: 10px; padding: 13px 16px; font-size: 0.9rem; margin-bottom: 14px; animation: fadeIn 0.3s ease; }
+  .msg.error { background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.35); color: var(--danger); }
+  .msg.info { background: var(--whatsapp-soft); border: 1px solid rgba(37, 211, 102, 0.35); color: var(--success); }
+  .summary { display: flex; gap: 10px; margin-bottom: 14px; }
+  .summary .box {
+    flex: 1; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px; text-align: center;
+  }
+  .summary .box .num { font-size: 1.35rem; font-weight: 700; }
+  .summary .box .lbl { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+  .summary .box.green .num { color: var(--success); }
+  .summary .box.red .num { color: var(--danger); }
+  .results { max-height: 280px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+  .result-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 11px 14px; font-size: 0.88rem; border-bottom: 1px solid var(--border);
+    animation: fadeIn 0.3s ease;
+  }
+  .result-row:last-child { border-bottom: none; }
+  .result-row .num-text { font-family: Consolas, monospace; word-break: break-all; }
+  .result-row .err { color: var(--danger); font-size: 0.76rem; margin-top: 3px; }
+  .badge {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 12px; border-radius: 999px; font-size: 0.75rem; font-weight: 700;
+  }
+  .badge.sent { background: rgba(74, 222, 128, 0.12); color: var(--success); }
+  .badge.failed { background: rgba(248, 113, 113, 0.12); color: var(--danger); }
+  .badge svg { width: 12px; height: 12px; }
+  .empty { padding: 16px; text-align: center; color: var(--muted); font-size: 0.85rem; }
+  .results::-webkit-scrollbar { width: 8px; }
+  .results::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  footer { text-align: center; margin-top: 18px; color: var(--muted); font-size: 0.72rem; }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="logo">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12.04 2a9.9 9.9 0 0 0-8.5 14.94L2 22l5.22-1.5A9.94 9.94 0 1 0 12.04 2Zm5.8 14.03c-.24.68-1.4 1.31-1.93 1.36-.52.05-1.18.24-3.96-1.02-3.36-1.52-5.5-5.07-5.66-5.3-.17-.24-1.35-1.8-1.35-3.44 0-1.64.86-2.44 1.17-2.78.3-.33.66-.41.88-.41h.63c.2 0 .47-.08.74.56.27.65.92 2.25 1 2.41.08.17.14.36.03.58-.1.23-.16.37-.31.57-.16.2-.33.44-.47.59-.15.16-.32.33-.14.65.18.32.8 1.32 1.72 2.14 1.18 1.05 2.17 1.38 2.48 1.53.31.16.49.13.67-.08.18-.2.78-.9.98-1.21.2-.32.41-.26.68-.15.28.1 1.77.83 2.07.98.3.15.5.23.57.36.07.12.07.72-.17 1.4Z"/>
+        </svg>
+      </div>
+      <h1>WhatsApp Bulk Sender</h1>
+      <p class="subtitle">Send one message to many numbers at once</p>
+      <div id="connPill" class="conn-pill"><span class="spinner"></span><span id="connText">Checking WhatsApp...</span></div>
+    </header>
+
+    <!-- QR / connection status -->
+    <div id="connectBox" class="card connect-box"></div>
+
+    <!-- Main form -->
+    <div id="formCard" class="card form-card hidden">
+      <form id="bulkForm" novalidate>
+        <div class="form-group">
+          <div class="label-row">
+            <label for="numbers">WhatsApp Numbers</label>
+            <span id="numCount" class="count">0 numbers</span>
+          </div>
+          <textarea id="numbers" placeholder="+919876543210, +14155552671, +491512345678" required></textarea>
+          <p class="hint">Separate multiple numbers with commas. Include the country code.</p>
+        </div>
+
+        <div class="form-group">
+          <div class="label-row">
+            <label for="message">Message</label>
+          </div>
+          <textarea id="message" placeholder="Hello! This is a bulk message sent from my web app." required></textarea>
+        </div>
+
+        <button id="sendBtn" class="btn" type="submit">Send to All</button>
+      </form>
+    </div>
+
+    <div id="status"></div>
+
+    <footer>Built with whatsapp-web.js - for educational use only</footer>
+  </div>
+
+<script>
+(function () {
+  var form = document.getElementById('bulkForm');
+  var statusArea = document.getElementById('status');
+  var sendBtn = document.getElementById('sendBtn');
+  var formCard = document.getElementById('formCard');
+  var connectBox = document.getElementById('connectBox');
+  var connPill = document.getElementById('connPill');
+  var connText = document.getElementById('connText');
+  var numCount = document.getElementById('numCount');
+  var numbersInput = document.getElementById('numbers');
+
+  var connected = false;
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ---------- Connection + QR polling ----------
+  function setPill(kind, text) {
+    connPill.className = 'conn-pill ' + kind;
+    connText.textContent = text;
+  }
+
+  function renderConnect(kind, html) {
+    connectBox.innerHTML = html;
+    connectBox.classList.remove('hidden');
+  }
+
+  function showConnectWaiting() {
+    setPill('', 'Connecting...');
+    renderConnect('wait',
+      '<div class="connect-wait">' +
+        '<div class="spinner-big"></div>' +
+        'Starting WhatsApp session... this can take up to a minute.' +
+      '</div>');
+  }
+
+  function showConnectQr(imgSrc) {
+    setPill('offline', 'Scan the QR code to connect');
+    renderConnect('qr',
+      '<div class="qr-frame"><img src="' + imgSrc + '" alt="WhatsApp QR code"></div>' +
+      '<p class="qr-hint"><b>Scan with your phone:</b><br>' +
+      'Open WhatsApp on your phone &gt; Settings &gt; Linked Devices &gt; Link a Device<br>' +
+      'QR code refreshes every ~20 seconds until you scan it.</p>');
+  }
+
+  function showConnectOk() {
+    setPill('online', 'WhatsApp connected');
+    renderConnect('ok',
+      '<div class="connect-ok">' +
+        '<div class="check"><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>' +
+        '<h3>Connected</h3>' +
+        '<p>Your WhatsApp account is linked. You can now send messages.</p>' +
+      '</div>');
+  }
+
+  var lastQr = null;
+  async function refreshConn() {
+    try {
+      var sRes = await fetch('/api/status');
+      var s = await sRes.json();
+      connected = !!s.ready;
+
+      if (connected) {
+        showConnectOk();
+        formCard.classList.remove('hidden');
+        sendBtn.disabled = false;
+        return;
+      }
+
+      formCard.classList.remove('hidden');
+      sendBtn.disabled = true;
+
+      var qRes = await fetch('/api/qr');
+      var q = await qRes.json();
+
+      if (q.qr) {
+        if (q.qr !== lastQr) {
+          lastQr = q.qr;
+          showConnectQr(q.qr);
+        }
+      } else {
+        showConnectWaiting();
+      }
+    } catch (e) {
+      setPill('error', 'Server unreachable');
+      connectBox.classList.remove('hidden');
+      renderConnect('wait',
+        '<div class="connect-wait">Cannot reach the server. Make sure <code>server.js</code> is running, then refresh this page.</div>');
+    }
+  }
+
+  refreshConn();
+  setInterval(refreshConn, 3000);
+
+  // ---------- Live number counter ----------
+  function parseNumbers(raw) {
+    return raw
+      .split(/[,\n;]+/)
+      .map(function (n) { return n.trim(); })
+      .filter(function (n) { return n.length > 0; });
+  }
+  numbersInput.addEventListener('input', function () {
+    var n = parseNumbers(numbersInput.value).length;
+    numCount.textContent = n + (n === 1 ? ' number' : ' numbers');
+  });
+
+  // ---------- Messages + results ----------
+  function showMessage(html, className) {
+    statusArea.innerHTML = '<div class="msg ' + className + '">' + html + '</div>';
+  }
+
+  function renderResults(data) {
+    var summary =
+      '<div class="summary">' +
+        '<div class="box"><div class="num">' + data.total + '</div><div class="lbl">Total</div></div>' +
+        '<div class="box green"><div class="num">' + data.sent + '</div><div class="lbl">Sent</div></div>' +
+        '<div class="box red"><div class="num">' + data.failed + '</div><div class="lbl">Failed</div></div>' +
+      '</div>';
+
+    var rows = data.results.map(function (r) {
+      var icon = r.status === 'sent'
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+      var err = r.error ? '<div class="err">' + escapeHtml(r.error) + '</div>' : '';
+      return (
+        '<div class="result-row">' +
+          '<div class="num-text">' + escapeHtml(r.number) + err + '</div>' +
+          '<span class="badge ' + r.status + '">' + icon + (r.status === 'sent' ? 'Sent' : 'Failed') + '</span>' +
+        '</div>'
+      );
+    }).join('');
+
+    var resultsBlock = rows
+      ? '<div class="results">' + rows + '</div>'
+      : '<div class="empty">No results.</div>';
+
+    statusArea.innerHTML = summary + resultsBlock;
+  }
+
+  // ---------- Submit: async fetch, no page refresh ----------
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+
+    var message = document.getElementById('message').value.trim();
+    var numbers = parseNumbers(numbersInput.value);
+
+    if (numbers.length === 0) {
+      showMessage('Please enter at least one WhatsApp number.', 'error');
+      return;
+    }
+    if (!message) {
+      showMessage('Please enter a message to send.', 'error');
+      return;
+    }
+    if (!connected) {
+      showMessage('WhatsApp is not connected yet. Scan the QR code above first.', 'error');
+      return;
+    }
+
+    sendBtn.disabled = true;
+    sendBtn.setAttribute('data-sending', '');
+    sendBtn.textContent = 'Sending ' + numbers.length + ' message(s)...';
+    showMessage('Sending messages now. Each send is spaced 1-3 seconds apart, so this may take a while.', 'info');
+
+    fetch('/send-bulk-message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numbers: numbers, message: message })
+    })
+      .then(function (res) {
+        return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+      })
+      .then(function (result) {
+        if (!result.ok || !result.data.success) {
+          showMessage('Error: ' + escapeHtml(result.data.error || 'Something went wrong.'), 'error');
+          return;
+        }
+        renderResults(result.data);
+        statusArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      })
+      .catch(function (err) {
+        showMessage('Network error: ' + escapeHtml(err.message), 'error');
+      })
+      .finally(function () {
+        sendBtn.disabled = false;
+        sendBtn.removeAttribute('data-sending');
+        sendBtn.textContent = 'Send to All';
+      });
+  });
+})();
+</script>
+</body>
+</html>

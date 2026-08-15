@@ -1,0 +1,26 @@
+{
+  "name": "whatsapp-bulk-sender",
+  "version": "1.0.0",
+  "description": "Bulk WhatsApp message sender web app (college project)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "whatsapp",
+    "bulk",
+    "sender",
+    "express",
+    "whatsapp-web.js"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.26.0"
+  },
+  "allowScripts": {
+    "puppeteer@24.38.0": true
+  }
+}
